@@ -10,6 +10,7 @@ import click
 from . import __version__, git_utils
 from .bisect import bisect, make_stack_trace_filter
 from .flaky import wrap_predicate
+from .github_integration import GitHubError, build_revert_pr, open_revert_pr
 from .runners import PytestRunner
 from .stack_trace import extract_python_files
 from .storage import Storage
@@ -56,6 +57,18 @@ def cli() -> None:
     help="Fraction of re-runs that must fail to confirm a real failure.",
 )
 @click.option(
+    "--open-pr",
+    is_flag=True,
+    default=False,
+    help="After identifying the bad commit, open a draft revert PR via gh.",
+)
+@click.option(
+    "--pr-base",
+    default="main",
+    show_default=True,
+    help="Base branch for the revert PR.",
+)
+@click.option(
     "--restore/--no-restore",
     default=True,
     help="Restore the original HEAD when bisect finishes.",
@@ -69,6 +82,8 @@ def bisect_cmd(
     trace_file: str | None,
     flaky_runs: int,
     flaky_threshold: float,
+    open_pr: bool,
+    pr_base: str,
     restore: bool,
 ) -> None:
     """Bisect history between GOOD and BAD to find the commit that broke TEST."""
@@ -146,6 +161,26 @@ def bisect_cmd(
             click.echo(
                 f"  skipped {result.skipped} of {result.total_candidates} commits via stack-trace filter"
             )
+
+        pr = build_revert_pr(
+            bad_sha=result.bad_commit,
+            base_branch=pr_base,
+            bisect_log=result.log,
+            failing_test=test,
+        )
+        if open_pr:
+            try:
+                pr = open_revert_pr(repo_path, pr, bad_sha=result.bad_commit)
+                click.secho(f"\nDraft revert PR opened: {pr.url}", fg="green", bold=True)
+            except GitHubError as exc:
+                click.secho(f"\nCould not open PR automatically: {exc}", fg="red")
+                click.echo("Falling back to dry-run output:\n")
+                click.echo(f"  branch: {pr.branch}\n  title:  {pr.title}\n")
+                click.echo(pr.body)
+        else:
+            click.echo("\nDry run — pass --open-pr to push a revert branch and open a draft PR.")
+            click.echo(f"  branch: {pr.branch}")
+            click.echo(f"  title:  {pr.title}")
     else:
         click.secho("No regression found — the test passed at every candidate.", fg="yellow")
 
