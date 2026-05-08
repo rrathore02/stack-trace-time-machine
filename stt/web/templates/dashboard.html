@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}stt dashboard — overview{% endblock %}
+
+{% block content %}
+<section class="mb-10">
+    <h1 class="text-2xl font-semibold mb-1">Overview</h1>
+    <p class="text-sm text-slate-500 dark:text-slate-400">
+        Every <code class="mono">stt bisect</code> step records a (commit, pass/fail) row.
+        This page is a window into that database.
+    </p>
+</section>
+
+<section class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
+    <div class="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4">
+        <div class="text-xs uppercase tracking-wide text-slate-500">Tracked tests</div>
+        <div class="text-3xl font-semibold mt-1">{{ tests | length }}</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4">
+        <div class="text-xs uppercase tracking-wide text-slate-500">Currently red</div>
+        <div class="text-3xl font-semibold mt-1
+            {% if red_count > 0 %}text-red-600 dark:text-red-400{% else %}text-emerald-600 dark:text-emerald-400{% endif %}">
+            {{ red_count }}
+        </div>
+    </div>
+    <div class="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4">
+        <div class="text-xs uppercase tracking-wide text-slate-500">Recent runs shown</div>
+        <div class="text-3xl font-semibold mt-1">{{ recent | length }}</div>
+    </div>
+</section>
+
+<section class="mb-12">
+    <h2 class="text-xl font-semibold mb-3">Tests</h2>
+    {% if tests %}
+    <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+        <table class="w-full text-sm">
+            <thead class="bg-slate-100 dark:bg-slate-800/50 text-left">
+                <tr>
+                    <th class="px-3 py-2">Status</th>
+                    <th class="px-3 py-2">Repo</th>
+                    <th class="px-3 py-2">Test</th>
+                    <th class="px-3 py-2 text-right">Runs</th>
+                    <th class="px-3 py-2 text-right">Fail rate</th>
+                    <th class="px-3 py-2">Last run</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                {% for t in tests %}
+                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <td class="px-3 py-2">
+                        {% if t.currently_red %}
+                        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> red
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> green
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td class="px-3 py-2 mono text-xs text-slate-500">{{ t.repo }}</td>
+                    <td class="px-3 py-2 mono">
+                        <a class="text-blue-600 dark:text-blue-400 hover:underline"
+                           href="/test?repo={{ t.repo | urlencode }}&test={{ t.test_id | urlencode }}">
+                            {{ t.test_id }}
+                        </a>
+                    </td>
+                    <td class="px-3 py-2 text-right mono">{{ t.runs }}</td>
+                    <td class="px-3 py-2 text-right mono">{{ "%.0f%%" | format(t.fail_rate * 100) }}</td>
+                    <td class="px-3 py-2 mono text-xs text-slate-500">{{ t.last_run_at[:19].replace("T", " ") }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-sm text-slate-500">
+        No runs recorded yet. Try
+        <code class="mono px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800">stt bisect --help</code>.
+    </p>
+    {% endif %}
+</section>
+
+<section>
+    <h2 class="text-xl font-semibold mb-3">Recent runs</h2>
+    {% if recent %}
+    <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+        <table class="w-full text-sm">
+            <thead class="bg-slate-100 dark:bg-slate-800/50 text-left">
+                <tr>
+                    <th class="px-3 py-2">Result</th>
+                    <th class="px-3 py-2">When</th>
+                    <th class="px-3 py-2">Test</th>
+                    <th class="px-3 py-2">Commit</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                {% for r in recent %}
+                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <td class="px-3 py-2">
+                        {% if r.passed %}
+                        <span class="text-emerald-600 dark:text-emerald-400 mono">PASS</span>
+                        {% else %}
+                        <span class="text-red-600 dark:text-red-400 mono">FAIL</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-3 py-2 mono text-xs text-slate-500">{{ r.timestamp[:19].replace("T", " ") }}</td>
+                    <td class="px-3 py-2 mono">
+                        <a class="text-blue-600 dark:text-blue-400 hover:underline"
+                           href="/test?repo={{ r.repo | urlencode }}&test={{ r.test_id | urlencode }}">
+                            {{ r.test_id }}
+                        </a>
+                    </td>
+                    <td class="px-3 py-2 mono text-xs">{{ r.sha[:10] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

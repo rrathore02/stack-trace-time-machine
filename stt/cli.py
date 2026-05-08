@@ -202,5 +202,28 @@ def history_cmd(repo: str, test: str, limit: int) -> None:
         click.echo(f"  {ts}  {sha[:10]}  {marker}")
 
 
+@cli.command(name="web")
+@click.option("--host", default="127.0.0.1", show_default=True, help="Interface to bind.")
+@click.option("--port", default=8765, show_default=True, help="Port to listen on.")
+@click.option(
+    "--db",
+    default=None,
+    type=click.Path(dir_okay=False),
+    help="Path to history DB (defaults to ~/.stt/history.db).",
+)
+def web_cmd(host: str, port: int, db: str | None) -> None:
+    """Launch the read-only web dashboard."""
+    try:
+        from .web import run as run_web
+    except ImportError as exc:  # pragma: no cover — import-time message
+        raise click.UsageError(
+            "Web dashboard requires the [web] extra. Install with: "
+            f"pip install -e \".[web]\"  ({exc})"
+        ) from exc
+
+    click.echo(f"Starting stt dashboard on http://{host}:{port}")
+    run_web(host=host, port=port, db_path=db)
+
+
 if __name__ == "__main__":
     cli()

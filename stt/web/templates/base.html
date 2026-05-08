@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}stt dashboard{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"
+            integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC"
+            crossorigin="anonymous"></script>
+    <style>
+        :root { color-scheme: light dark; }
+        body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100 min-h-screen">
+    <header class="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+        <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+            <a href="/" class="flex items-center gap-2 text-lg font-semibold">
+                <span class="inline-block w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                <span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                <span class="ml-2">stt dashboard</span>
+            </a>
+            <nav class="flex items-center gap-4 text-sm">
+                <a href="/" class="hover:underline">Home</a>
+                <a href="/docs" class="hover:underline">API docs</a>
+                <a href="https://github.com/rrathore02/stack-trace-time-machine"
+                   class="hover:underline" target="_blank" rel="noopener">GitHub</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-6 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="max-w-6xl mx-auto px-6 py-6 text-xs text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-800 mt-12">
+        Stack Trace Time Machine — read-only dashboard. Data lives in
+        <code class="mono">~/.stt/history.db</code>.
+    </footer>
+</body>
+</html>
