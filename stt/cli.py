@@ -10,6 +10,7 @@ import click
 from . import __version__, git_utils
 from .bisect import bisect
 from .runners import PytestRunner
+from .storage import Storage
 
 
 @click.group()
@@ -20,7 +21,11 @@ def cli() -> None:
 
 @cli.command(name="bisect")
 @click.option("--repo", default=".", show_default=True, help="Path to git repo.")
-@click.option("--good", required=True, help="Known-good commit ref (test passes).")
+@click.option(
+    "--good",
+    default=None,
+    help="Known-good commit ref. If omitted, uses the last passing SHA from history.",
+)
 @click.option("--bad", default="HEAD", show_default=True, help="Known-bad commit ref.")
 @click.option("--test", required=True, help="Test id (e.g. tests/test_x.py::test_y).")
 @click.option(
@@ -34,13 +39,26 @@ def cli() -> None:
     default=True,
     help="Restore the original HEAD when bisect finishes.",
 )
-def bisect_cmd(repo: str, good: str, bad: str, test: str, runner: str, restore: bool) -> None:
+def bisect_cmd(repo: str, good: str | None, bad: str, test: str, runner: str, restore: bool) -> None:
     """Bisect history between GOOD and BAD to find the commit that broke TEST."""
     repo_path = str(Path(repo).resolve())
 
     if not git_utils.is_clean(repo_path):
         click.secho("Working tree is not clean — commit or stash before bisecting.", fg="red")
         sys.exit(2)
+
+    storage = Storage()
+
+    if good is None:
+        good = storage.last_passing_sha(repo_path, test)
+        if good is None:
+            click.secho(
+                "No --good provided and no passing run recorded for this test yet. "
+                "Pass --good explicitly or run the test on a known-good commit first.",
+                fg="red",
+            )
+            sys.exit(2)
+        click.echo(f"Using last recorded passing SHA: {good[:10]}")
 
     original = git_utils.current_sha(repo_path)
     good_sha = git_utils.resolve(repo_path, good)
@@ -49,7 +67,9 @@ def bisect_cmd(repo: str, good: str, bad: str, test: str, runner: str, restore: 
     runner_impl = PytestRunner()
 
     def test_fn(sha: str) -> bool:
-        return runner_impl.run(repo_path, test).passed
+        result = runner_impl.run(repo_path, test)
+        storage.record(repo_path, test, sha, result.passed)
+        return result.passed
 
     def on_step(sha: str, passed: bool, n: int) -> None:
         marker = click.style("PASS", fg="green") if passed else click.style("FAIL", fg="red")
@@ -70,6 +90,23 @@ def bisect_cmd(repo: str, good: str, bad: str, test: str, runner: str, restore: 
         click.echo(f"  iterations: {result.iterations}")
     else:
         click.secho("No regression found — the test passed at every candidate.", fg="yellow")
+
+
+@cli.command(name="history")
+@click.option("--repo", default=".", show_default=True)
+@click.option("--test", required=True)
+@click.option("--limit", default=20, show_default=True)
+def history_cmd(repo: str, test: str, limit: int) -> None:
+    """Show recent recorded runs for a test."""
+    repo_path = str(Path(repo).resolve())
+    storage = Storage()
+    rows = storage.history(repo_path, test, limit=limit)
+    if not rows:
+        click.echo("(no recorded runs)")
+        return
+    for sha, passed, ts in rows:
+        marker = click.style("PASS", fg="green") if passed else click.style("FAIL", fg="red")
+        click.echo(f"  {ts}  {sha[:10]}  {marker}")
 
 
 if __name__ == "__main__":
