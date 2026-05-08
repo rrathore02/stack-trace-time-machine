@@ -35,6 +35,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         title="stt dashboard",
         description="Read-only viewer over the stt bisect history.",
         version="0.1.0",
+        # Disable default docs/redoc; we render our own /docs that keeps the
+        # site nav so users can get back to the dashboard.
+        docs_url=None,
+        redoc_url=None,
     )
 
     # ---- HTML pages ----
@@ -74,6 +78,11 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 "last_pass": last_pass,
             },
         )
+
+    @app.get("/docs", response_class=HTMLResponse, include_in_schema=False)
+    async def custom_docs(request: Request) -> Any:
+        """Swagger UI wrapped in our base template so the site nav stays."""
+        return templates.TemplateResponse(request, "docs.html", {})
 
     # ---- JSON API ----
 

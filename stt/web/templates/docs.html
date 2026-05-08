@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}stt dashboard — API docs{% endblock %}
+
+{% block content %}
+<section class="mb-6">
+    <h1 class="text-2xl font-semibold mb-1">API documentation</h1>
+    <p class="text-sm text-slate-500 dark:text-slate-400">
+        Interactive Swagger UI for the JSON endpoints. Use the <a href="/" class="text-blue-600 dark:text-blue-400 hover:underline">Home</a> link in the header to return to the dashboard.
+    </p>
+</section>
+
+<link rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+<div id="swagger-ui" class="rounded-lg overflow-hidden bg-white"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>
+window.addEventListener("DOMContentLoaded", function () {
+    SwaggerUIBundle({
+        url: "/openapi.json",
+        dom_id: "#swagger-ui",
+        deepLinking: true,
+        layout: "BaseLayout",
+        presets: [
+            SwaggerUIBundle.presets.apis,
+            SwaggerUIBundle.SwaggerUIStandalonePreset,
+        ],
+    });
+});
+</script>
+{% endblock %}

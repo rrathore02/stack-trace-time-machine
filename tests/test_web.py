@@ -93,3 +93,26 @@ def test_api_tests_includes_red_flag(client: TestClient) -> None:
     by_test = {row["test_id"]: row for row in resp.json()}
     assert by_test["tests/test_x.py::test_a"]["currently_red"] is True
     assert by_test["tests/test_x.py::test_b"]["currently_red"] is False
+
+
+def test_docs_page_has_site_nav(client: TestClient) -> None:
+    """/docs must keep the site nav so users can get back to the dashboard."""
+    resp = client.get("/docs")
+    assert resp.status_code == 200
+    body = resp.text
+    # Site nav strings (rendered by base.html)
+    assert "stt dashboard" in body
+    assert ">Home<" in body
+    # Swagger UI mount point + bundle
+    assert 'id="swagger-ui"' in body
+    assert "swagger-ui-bundle.js" in body
+
+
+def test_openapi_json_still_served(client: TestClient) -> None:
+    """Disabling docs_url must not disable the OpenAPI schema route."""
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+    schema = resp.json()
+    assert schema["info"]["title"] == "stt dashboard"
+    # Spot-check that our routes show up
+    assert "/api/runs" in schema["paths"]
