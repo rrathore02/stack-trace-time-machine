@@ -8,8 +8,9 @@ from pathlib import Path
 import click
 
 from . import __version__, git_utils
-from .bisect import bisect
+from .bisect import bisect, make_stack_trace_filter
 from .runners import PytestRunner
+from .stack_trace import extract_python_files
 from .storage import Storage
 
 
@@ -35,11 +36,24 @@ def cli() -> None:
     show_default=True,
 )
 @click.option(
+    "--trace-file",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Path to a file containing the failing stack trace. Enables smart filtering.",
+)
+@click.option(
     "--restore/--no-restore",
     default=True,
     help="Restore the original HEAD when bisect finishes.",
 )
-def bisect_cmd(repo: str, good: str | None, bad: str, test: str, runner: str, restore: bool) -> None:
+def bisect_cmd(
+    repo: str,
+    good: str | None,
+    bad: str,
+    test: str,
+    runner: str,
+    trace_file: str | None,
+    restore: bool,
+) -> None:
     """Bisect history between GOOD and BAD to find the commit that broke TEST."""
     repo_path = str(Path(repo).resolve())
 
@@ -64,6 +78,20 @@ def bisect_cmd(repo: str, good: str | None, bad: str, test: str, runner: str, re
     good_sha = git_utils.resolve(repo_path, good)
     bad_sha = git_utils.resolve(repo_path, bad)
 
+    candidate_filter = None
+    if trace_file:
+        trace_text = Path(trace_file).read_text(encoding="utf-8", errors="replace")
+        files = extract_python_files(trace_text)
+        if files:
+            click.echo(f"Smart bisect: filtering to commits touching {len(files)} file(s):")
+            for f in files[:5]:
+                click.echo(f"  - {f}")
+            if len(files) > 5:
+                click.echo(f"  … and {len(files) - 5} more")
+            candidate_filter = make_stack_trace_filter(repo_path, files)
+        else:
+            click.secho("No source files found in trace; falling back to full bisect.", fg="yellow")
+
     runner_impl = PytestRunner()
 
     def test_fn(sha: str) -> bool:
@@ -79,7 +107,14 @@ def bisect_cmd(repo: str, good: str | None, bad: str, test: str, runner: str, re
         f"Bisecting {good_sha[:10]}..{bad_sha[:10]} for test {test!r} using {runner}"
     )
     try:
-        result = bisect(repo_path, good_sha, bad_sha, test_fn, on_step=on_step)
+        result = bisect(
+            repo_path,
+            good_sha,
+            bad_sha,
+            test_fn,
+            candidate_filter=candidate_filter,
+            on_step=on_step,
+        )
     finally:
         if restore:
             git_utils.checkout(repo_path, original)
@@ -88,6 +123,10 @@ def bisect_cmd(repo: str, good: str | None, bad: str, test: str, runner: str, re
     if result.bad_commit:
         click.secho(f"First bad commit: {result.bad_commit}", fg="red", bold=True)
         click.echo(f"  iterations: {result.iterations}")
+        if result.skipped:
+            click.echo(
+                f"  skipped {result.skipped} of {result.total_candidates} commits via stack-trace filter"
+            )
     else:
         click.secho("No regression found — the test passed at every candidate.", fg="yellow")
 
