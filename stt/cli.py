@@ -9,6 +9,7 @@ import click
 
 from . import __version__, git_utils
 from .bisect import bisect, make_stack_trace_filter
+from .flaky import wrap_predicate
 from .runners import PytestRunner
 from .stack_trace import extract_python_files
 from .storage import Storage
@@ -41,6 +42,20 @@ def cli() -> None:
     help="Path to a file containing the failing stack trace. Enables smart filtering.",
 )
 @click.option(
+    "--flaky-runs",
+    default=1,
+    show_default=True,
+    type=click.IntRange(min=1, max=10),
+    help="Re-run apparent failures this many times to weed out flakes.",
+)
+@click.option(
+    "--flaky-threshold",
+    default=0.6,
+    show_default=True,
+    type=click.FloatRange(min=0.1, max=1.0),
+    help="Fraction of re-runs that must fail to confirm a real failure.",
+)
+@click.option(
     "--restore/--no-restore",
     default=True,
     help="Restore the original HEAD when bisect finishes.",
@@ -52,6 +67,8 @@ def bisect_cmd(
     test: str,
     runner: str,
     trace_file: str | None,
+    flaky_runs: int,
+    flaky_threshold: float,
     restore: bool,
 ) -> None:
     """Bisect history between GOOD and BAD to find the commit that broke TEST."""
@@ -94,10 +111,12 @@ def bisect_cmd(
 
     runner_impl = PytestRunner()
 
-    def test_fn(sha: str) -> bool:
+    def raw_test_fn(sha: str) -> bool:
         result = runner_impl.run(repo_path, test)
         storage.record(repo_path, test, sha, result.passed)
         return result.passed
+
+    test_fn = wrap_predicate(raw_test_fn, runs=flaky_runs, fail_threshold=flaky_threshold)
 
     def on_step(sha: str, passed: bool, n: int) -> None:
         marker = click.style("PASS", fg="green") if passed else click.style("FAIL", fg="red")
