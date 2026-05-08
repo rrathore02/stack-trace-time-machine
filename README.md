@@ -189,6 +189,8 @@ Open the URL and you'll see:
 
 The dashboard reads the same `~/.stt/history.db` the CLI writes to, so anything `stt bisect` records shows up immediately. No separate database, no daemon.
 
+> **For the full guide** — pages explained, schema reference, where the data comes from, how to seed sample data, troubleshooting — **see [DASHBOARD.md](DASHBOARD.md).**
+
 ---
 
 ## How it works
