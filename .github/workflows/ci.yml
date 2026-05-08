@@ -24,10 +24,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install package + dev deps
+      - name: Install package + dev + web deps
+        # Install [web] too so the FastAPI smoke tests aren't silently skipped.
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,web]"
 
       - name: Configure git for tests
         # The tiny_repo fixture creates real git history, which requires a

@@ -169,11 +169,33 @@ That's the **smart bisect** mode — explained below.
 
 ---
 
+## Web dashboard (optional)
+
+`stt` ships with a small read-only web dashboard so you can browse your bisect history in a browser instead of by `stt history` calls.
+
+### Install + launch
+
+```bash
+pip install -e ".[web]"   # one extra: FastAPI + uvicorn + Jinja2
+stt web                   # serves on http://127.0.0.1:8765
+```
+
+Open the URL and you'll see:
+
+- **Dashboard (`/`)** — every test you've ever run, with a red/green pill, run count, fail rate, and a feed of the most recent runs
+- **Per-test view (`/test`)** — every recorded run for a single test, plus a colored timeline of pass/fail dots (oldest → newest) and the last passing SHA
+- **`/api/runs` and `/api/tests`** — same data as JSON
+- **`/docs`** — auto-generated Swagger UI from FastAPI
+
+The dashboard reads the same `~/.stt/history.db` the CLI writes to, so anything `stt bisect` records shows up immediately. No separate database, no daemon.
+
+---
+
 ## How it works
 
 ```mermaid
 flowchart TD
-    A[stt bisect] --> B[Storage<br/>SQLite]
+    A[stt CLI] --> B[Storage<br/>SQLite]
     A --> C[Stack Trace<br/>Parser]
     A --> D[Test Runner<br/>pytest]
     B -->|last passing SHA| E[Core Bisect Loop<br/>binary search]
@@ -181,6 +203,7 @@ flowchart TD
     D -->|pass/fail| E
     E --> F[Flaky Test<br/>Re-confirmation]
     F --> G[GitHub<br/>Revert PR Drafter]
+    B --> H[Web Dashboard<br/>FastAPI + Jinja2]
 ```
 
 Each box is a small, decoupled Python module under [`stt/`](stt/). You can swap the test runner, plug in a new stack-trace parser for another language, or skip the GitHub bit entirely.
@@ -194,6 +217,7 @@ Each box is a small, decoupled Python module under [`stt/`](stt/). You can swap 
 | [`stt/storage.py`](stt/storage.py) | Tiny SQLite database remembering past test runs |
 | [`stt/flaky.py`](stt/flaky.py) | Re-runs failures to detect flaky tests |
 | [`stt/github_integration.py`](stt/github_integration.py) | Builds a revert PR via the `gh` CLI |
+| [`stt/web/app.py`](stt/web/app.py) | Optional web dashboard (FastAPI + Jinja2) |
 | [`stt/cli.py`](stt/cli.py) | The user-facing command-line interface |
 
 ---
@@ -225,6 +249,16 @@ Show recent recorded runs for a test.
 ```
 stt history --test tests/test_billing.py::test_invoice_total --limit 10
 ```
+
+### `stt web`
+
+Launch the read-only web dashboard. Requires `pip install -e ".[web]"`.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--host` | `127.0.0.1` | Interface to bind |
+| `--port` | `8765` | Port to listen on |
+| `--db` | `~/.stt/history.db` | Path to history DB |
 
 ---
 
@@ -271,11 +305,11 @@ These are deliberate, not bugs.
 ## Development
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,web]"
 pytest -q
 ```
 
-17 tests. The bisect tests build a real throwaway Git repo so the binary search exercises real `git rev-list` and `git checkout` calls — not mocks.
+29 tests. The bisect tests build a real throwaway Git repo so the binary search exercises real `git rev-list` and `git checkout` calls — not mocks. Web tests use FastAPI's `TestClient` to hit every route end-to-end.
 
 CI runs the same tests on every push against Python 3.10, 3.11, and 3.12.
 
