@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stack-trace-time-machine"
+version = "0.0.1"
+description = "Auto-bisect git history to find the commit that broke a test."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "rrathore02" }]
+keywords = ["git", "bisect", "testing", "ci", "developer-tools"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Testing",
+]
+
+dependencies = [
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+github = ["requests>=2.31"]
+dev = ["pytest>=7.4", "pytest-cov"]
+
+[project.scripts]
+stt = "stt.cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["stt*"]
