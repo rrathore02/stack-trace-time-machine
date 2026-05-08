@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Optional
@@ -78,3 +79,85 @@ class Storage:
                 (repo, test_id, limit),
             ).fetchall()
         return [(sha, bool(passed), ts) for sha, passed, ts in rows]
+
+    # ----- queries used by the web dashboard -----
+
+    def recent_runs(self, limit: int = 50) -> list[RunRow]:
+        """Most recent runs across all repos and tests."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT repo, test_id, sha, passed, timestamp FROM test_runs "
+                "ORDER BY timestamp DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            RunRow(repo=r, test_id=t, sha=s, passed=bool(p), timestamp=ts)
+            for r, t, s, p, ts in rows
+        ]
+
+    def tests_seen(self) -> list[TestSummary]:
+        """One row per (repo, test_id) ever recorded, with summary stats."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    repo,
+                    test_id,
+                    COUNT(*)                        AS runs,
+                    SUM(passed)                     AS passes,
+                    MAX(timestamp)                  AS last_run_at,
+                    -- last_passed_at: the most recent timestamp where passed=1
+                    MAX(CASE WHEN passed = 1 THEN timestamp END) AS last_passed_at,
+                    MAX(CASE WHEN passed = 0 THEN timestamp END) AS last_failed_at
+                FROM test_runs
+                GROUP BY repo, test_id
+                ORDER BY last_run_at DESC
+                """
+            ).fetchall()
+        return [
+            TestSummary(
+                repo=repo,
+                test_id=test_id,
+                runs=runs,
+                passes=passes or 0,
+                last_run_at=last_run_at,
+                last_passed_at=last_passed_at,
+                last_failed_at=last_failed_at,
+            )
+            for repo, test_id, runs, passes, last_run_at, last_passed_at, last_failed_at in rows
+        ]
+
+
+@dataclass
+class RunRow:
+    repo: str
+    test_id: str
+    sha: str
+    passed: bool
+    timestamp: str
+
+
+@dataclass
+class TestSummary:
+    repo: str
+    test_id: str
+    runs: int
+    passes: int
+    last_run_at: str
+    last_passed_at: Optional[str]
+    last_failed_at: Optional[str]
+
+    @property
+    def fail_rate(self) -> float:
+        if self.runs == 0:
+            return 0.0
+        return 1.0 - (self.passes / self.runs)
+
+    @property
+    def currently_red(self) -> bool:
+        """True if the most recent run was a failure."""
+        if self.last_failed_at is None:
+            return False
+        if self.last_passed_at is None:
+            return True
+        return self.last_failed_at > self.last_passed_at
