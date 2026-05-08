@@ -191,6 +191,8 @@ The dashboard reads the same `~/.stt/history.db` the CLI writes to, so anything 
 
 > **For the full guide** — pages explained, schema reference, where the data comes from, how to seed sample data, troubleshooting — **see [DASHBOARD.md](DASHBOARD.md).**
 
+> **Want a beginner-friendly walkthrough as a PDF?** Run `pip install -e ".[docs]" && python scripts/build_guide_pdf.py` to generate `~/Documents/stt-project-guide.pdf` — a 23-page guide that covers concepts (Git, commits, regressions, bisect), how `stt` works, how to use it on a real GitHub repo, the dashboard, and 20 interview questions with model answers. See [scripts/README.md](scripts/README.md).
+
 ---
 
 ## How it works

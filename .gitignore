@@ -30,3 +30,6 @@ htmlcov/
 *.db
 *.sqlite
 .stt/
+
+# Generated PDFs (regenerate with scripts/build_guide_pdf.py)
+*.pdf
