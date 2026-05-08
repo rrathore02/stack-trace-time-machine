@@ -1,94 +1,200 @@
 # Stack Trace Time Machine (`stt`)
 
-> Find the commit that broke your test, automatically.
+[![CI](https://github.com/rrathore02/stack-trace-time-machine/actions/workflows/ci.yml/badge.svg)](https://github.com/rrathore02/stack-trace-time-machine/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 
-`stt` is a developer tool that combines `git bisect` with the failing stack trace to identify the offending commit fast — and (optionally) draft a revert PR. The naive way takes 15 minutes to four hours. `stt` does it while you finish your coffee.
+> **In one sentence:** when one of your tests starts failing, this tool figures out which of your recent changes caused it — automatically — instead of you doing it by hand.
 
-```
-$ stt bisect --good v1.4.2 --test tests/test_billing.py::test_invoice_total \
-             --trace-file failure.log
-Using last recorded passing SHA: v1.4.2
-Smart bisect: filtering to commits touching 3 file(s):
-  - src/billing/invoice.py
-  - src/billing/tax.py
-  - tests/test_billing.py
-Bisecting a1b2c3d4e5..f6e5d4c3b2 for test 'tests/test_billing.py::test_invoice_total' using pytest
-  step 1: 3f4a8b9c1d → PASS
-  step 2: 8e2d1c0b5a → FAIL
-  step 3: 5b9f2e7c4a → FAIL
+If some of the words below are unfamiliar (commit, regression, bisect, PR), there's a [glossary at the bottom](#glossary).
 
-First bad commit: 5b9f2e7c4a3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f
-  iterations: 3
-  skipped 47 of 53 commits via stack-trace filter
+---
+
+## The problem this solves
+
+You're working on a codebase. Last week, all the tests passed. Today, one of them is failing. Somewhere in the **50 changes** you and your teammates made in between, **one change broke it.** Which one?
+
+The traditional way to figure this out is `git bisect`: a built-in Git tool that does a binary search through your history. You start it, mark a known-good commit and a known-bad one, and Git keeps jumping you to commits in the middle until it narrows down the culprit. **It works, but you have to manually run the test at every step**, which on a real codebase can take 15 minutes to four hours.
+
+`stt` automates that whole loop:
+
+1. You tell it which test is failing.
+2. It bisects history for you, running the test at each step.
+3. It uses the failing **stack trace** (the error output) to skip commits that couldn't possibly be the culprit — so it goes ~10× faster on real codebases.
+4. It re-runs failures a few times to weed out flaky tests.
+5. When it finds the bad commit, it can optionally open a draft pull request that reverts it.
+
+End result: you go from "the test is failing" → "here's the exact commit that broke it" in **one command, in the time it takes to grab coffee.**
+
+---
+
+## Who is this for?
+
+Software developers who work with Git and have a test suite. Especially useful if:
+
+- You work on a busy codebase where main breaks occasionally.
+- Your test setup is slow (containers, fixtures, integration tests) — every saved iteration is real time.
+- You're tired of running `git bisect` by hand.
+
+Not useful if you're not a developer — there's nothing visual or end-user-facing about this.
+
+---
+
+## What's `git bisect` (in 3 sentences)?
+
+Git tracks every change to your code as a **commit** — a saved snapshot. When something breaks, the bug was introduced in *some* commit. `git bisect` does a binary search through your commit history (split the range in half, test, narrow down) so that with N commits you only need ~log₂(N) test runs to find the bad one — but it makes you run the test manually at each step. `stt` is `git bisect` with the manual part automated and an extra optimization that uses the error output to skip commits that aren't suspects.
+
+---
+
+## Prerequisites
+
+You need these installed on your machine:
+
+| Tool | Version | Why | Install |
+|---|---|---|---|
+| **Python** | 3.10 or newer | The tool is written in Python | [python.org/downloads](https://www.python.org/downloads/) |
+| **Git** | any recent version | The whole point | [git-scm.com/downloads](https://git-scm.com/downloads) |
+| **`gh` CLI** | optional | Only needed if you want `stt` to open revert PRs for you | [cli.github.com](https://cli.github.com/) |
+
+To check you have them:
+
+```bash
+python --version    # should be 3.10+
+git --version       # any version is fine
+gh --version        # optional
 ```
 
 ---
 
-## The problem
+## Install
 
-When a test fails on `main` (or in CI), the engineer typically:
-1. Pulls `main`, confirms the failure locally.
-2. Manually checks out commits one by one until they find the bad one.
-3. Reads the diff. Decides whether to fix forward or revert.
-4. Tags the original author. Opens a revert PR.
+```bash
+# 1. Get the code
+git clone https://github.com/rrathore02/stack-trace-time-machine.git
+cd stack-trace-time-machine
 
-For a non-trivial regression in a busy repo, that's **15 minutes to four hours of focused engineering time per incident**. At a 100-engineer company with two regressions a week, that's roughly **520 engineer-hours / year** burned on bisect by hand.
+# 2. Install it. The "-e" means "editable" — if you change the source,
+#    your installed copy updates automatically. Useful for tinkering.
+pip install -e .
 
-`stt` automates steps 2–4. The engineer goes from "the test is failing" to "here's the commit, here's a draft revert PR" in one command.
+# 3. Verify it's on your PATH
+stt --help
+```
+
+You should see:
+
+```
+Usage: stt [OPTIONS] COMMAND [ARGS]...
+
+  Stack Trace Time Machine — find the commit that broke your test.
+
+Commands:
+  bisect   Bisect history between GOOD and BAD to find the commit that broke TEST.
+  history  Show recent recorded runs for a test.
+```
+
+---
+
+## Try it on a fake bug in 30 seconds
+
+The repo includes a tiny demo: a script that creates a throwaway Git repo with a planted bug, then you point `stt` at it.
+
+### Step 1 — seed the demo
+
+**On macOS / Linux / WSL:**
+```bash
+bash examples/demo_repo/seed.sh /tmp/stt-demo
+```
+
+**On Windows (PowerShell):**
+```powershell
+.\examples\demo_repo\seed.ps1 -Path C:\Temp\stt-demo
+```
+
+This creates a small repo with 6 commits. One of them — the one titled `"BUG: change answer to 41"` — broke a test on purpose.
+
+### Step 2 — run `stt` against it
+
+```bash
+stt bisect --repo /tmp/stt-demo \
+           --good HEAD~5 \
+           --test tests/test_compute.py::test_answer
+```
+
+(Use `C:\Temp\stt-demo` instead of `/tmp/stt-demo` on Windows.)
+
+### What you'll see
+
+```
+Bisecting <good>..HEAD for test 'tests/test_compute.py::test_answer' using pytest
+  step 1: <sha> → FAIL
+  step 2: <sha> → PASS
+  step 3: <sha> → FAIL
+
+First bad commit: <commit SHA>
+  iterations: 3
+
+Dry run — pass --open-pr to push a revert branch and open a draft PR.
+```
+
+`stt` correctly identifies the planted bad commit in 3 steps. **That's the whole tool, working end-to-end.**
+
+---
+
+## Use it on your own repo
+
+Once you have a failing test in your own project, find a commit you know was healthy (e.g., a tag from your last release, or just `HEAD~50`):
+
+```bash
+stt bisect \
+  --repo /path/to/your/project \
+  --good v1.4.2 \
+  --test tests/test_billing.py::test_invoice_total
+```
+
+After the first run, `stt` remembers the last commit where each test was green, so you can drop `--good`:
+
+```bash
+stt bisect --repo /path/to/your/project --test tests/test_billing.py::test_invoice_total
+```
+
+To make it faster on a long history, save the failing test's output to a file and pass `--trace-file`:
+
+```bash
+pytest tests/test_billing.py::test_invoice_total 2> failure.log
+stt bisect --repo . --test tests/test_billing.py::test_invoice_total --trace-file failure.log
+```
+
+That's the **smart bisect** mode — explained below.
 
 ---
 
 ## How it works
 
-```
-                ┌─────────────────────────────────────────────┐
-                │                stt bisect                    │
-                └────────────────────┬────────────────────────┘
-                                     │
-        ┌────────────────────────────┼─────────────────────────────┐
-        ▼                            ▼                             ▼
-  ┌───────────┐             ┌────────────────┐             ┌───────────────┐
-  │  Storage  │             │  Stack-trace   │             │ Test runner   │
-  │  (SQLite) │             │   parser       │             │  (pytest, …)  │
-  └─────┬─────┘             └────────┬───────┘             └───────┬───────┘
-        │                            │                             │
-        │ last passing SHA           │ files in trace              │ pass/fail
-        ▼                            ▼                             ▼
-                  ┌────────────────────────────────┐
-                  │       core bisect loop         │
-                  │ (binary search + smart filter) │
-                  └─────────────┬──────────────────┘
-                                │
-                                ▼
-                  ┌────────────────────────────────┐
-                  │   flaky-test re-confirmation   │
-                  └─────────────┬──────────────────┘
-                                │
-                                ▼
-                  ┌────────────────────────────────┐
-                  │     GitHub revert-PR draft     │
-                  └────────────────────────────────┘
+```mermaid
+flowchart TD
+    A[stt bisect] --> B[Storage<br/>SQLite]
+    A --> C[Stack Trace<br/>Parser]
+    A --> D[Test Runner<br/>pytest]
+    B -->|last passing SHA| E[Core Bisect Loop<br/>binary search]
+    C -->|files in trace| E
+    D -->|pass/fail| E
+    E --> F[Flaky Test<br/>Re-confirmation]
+    F --> G[GitHub<br/>Revert PR Drafter]
 ```
 
-Each box is a single Python module under [`stt/`](stt/). They're decoupled — you can swap the test runner, plug in a new stack-trace extractor, or skip the GitHub bit entirely.
+Each box is a small, decoupled Python module under [`stt/`](stt/). You can swap the test runner, plug in a new stack-trace parser for another language, or skip the GitHub bit entirely.
 
----
-
-## Quick start
-
-```bash
-git clone https://github.com/rrathore02/stack-trace-time-machine.git
-cd stack-trace-time-machine
-pip install -e .
-
-# Bisect: find the commit that broke a test
-stt bisect --repo /path/to/your/repo \
-           --good HEAD~50 \
-           --bad HEAD \
-           --test tests/test_thing.py::test_works
-```
-
-After the first run, `--good` is optional — `stt` remembers the last commit where the test was green and uses that automatically.
+| Module | What it does |
+|---|---|
+| [`stt/git_utils.py`](stt/git_utils.py) | Thin wrapper around the `git` command-line tool |
+| [`stt/bisect.py`](stt/bisect.py) | The binary-search loop that drives everything |
+| [`stt/stack_trace.py`](stt/stack_trace.py) | Pulls source-file paths out of failing-test output |
+| [`stt/runners/pytest_runner.py`](stt/runners/pytest_runner.py) | Knows how to invoke pytest and read its result |
+| [`stt/storage.py`](stt/storage.py) | Tiny SQLite database remembering past test runs |
+| [`stt/flaky.py`](stt/flaky.py) | Re-runs failures to detect flaky tests |
+| [`stt/github_integration.py`](stt/github_integration.py) | Builds a revert PR via the `gh` CLI |
+| [`stt/cli.py`](stt/cli.py) | The user-facing command-line interface |
 
 ---
 
@@ -98,19 +204,19 @@ After the first run, `--good` is optional — `stt` remembers the last commit wh
 
 Find the first commit between `--good` and `--bad` where `--test` starts failing.
 
-| Flag | Default | Purpose |
+| Flag | Default | What it does |
 |---|---|---|
-| `--repo` | `.` | Path to git repo |
-| `--good` | last passing SHA from history | Known-good commit ref |
-| `--bad` | `HEAD` | Known-bad commit ref |
-| `--test` | (required) | Test id, e.g. `tests/test_x.py::test_y` |
+| `--repo` | `.` | Path to the Git repo to bisect |
+| `--good` | last passing SHA from history | Commit reference (SHA, tag, branch) where the test passes |
+| `--bad` | `HEAD` | Commit reference where the test fails |
+| `--test` | (required) | Test ID, e.g. `tests/test_x.py::test_y` |
 | `--runner` | `pytest` | Test framework (more coming) |
-| `--trace-file` | — | Path to a file with the failing stack trace; enables smart filter |
-| `--flaky-runs` | `1` | Re-run apparent failures this many times |
-| `--flaky-threshold` | `0.6` | Fraction of re-runs that must fail to confirm |
+| `--trace-file` | — | Path to a file containing the failing stack trace; enables the smart filter |
+| `--flaky-runs` | `1` | Re-run apparent failures this many times to weed out flakes |
+| `--flaky-threshold` | `0.6` | Fraction of re-runs that must fail to confirm a real failure |
 | `--open-pr` | off | Push a revert branch and open a draft PR via `gh` |
 | `--pr-base` | `main` | Base branch for the revert PR |
-| `--restore/--no-restore` | restore | Restore original HEAD when bisect ends |
+| `--restore/--no-restore` | restore | Put HEAD back where it was when bisect ends |
 
 ### `stt history`
 
@@ -124,41 +230,19 @@ stt history --test tests/test_billing.py::test_invoice_total --limit 10
 
 ## The interesting part: smart bisect
 
-A bisect over 200 commits naïvely takes ~8 test runs. If the failing test takes 30s, that's 4 minutes — fine. But on a real codebase the test setup is often the slow part: container spin-up, fixture load, etc. Each iteration can be 2–5 minutes.
+A bisect over 200 commits is theoretically only 8 test runs (binary search). But in practice each test run can take minutes — Docker containers spin up, fixtures load, etc. So even an 8-run bisect can be 20-40 minutes.
 
-**Stack-trace-aware filtering** changes the math. Given the failing trace, we extract the source files involved (skipping `site-packages` and pytest internals) and only test commits that touched at least one of those files. On real codebases this typically prunes 80–95% of candidates.
+**Stack-trace-aware filtering** changes the math. Given the failing trace, `stt` extracts the source files involved (skipping standard-library and pytest internals) and only tests commits that touched at least one of those files. On real codebases this typically prunes 80–95% of candidates.
 
-Tradeoff: it's a **heuristic**. A regression caused by a config change or a transitively-imported file that doesn't appear in the trace will be missed and falsely attributed to a later commit. When in doubt, run without `--trace-file`.
-
-The implementation lives in [`stt/bisect.py`](stt/bisect.py) (`make_stack_trace_filter`) and [`stt/stack_trace.py`](stt/stack_trace.py).
+**Tradeoff: it's a heuristic.** A regression caused by a change to a config file or a transitively-imported file that doesn't appear in the trace will be missed and falsely attributed to a later commit. When in doubt, run without `--trace-file`. Implementation in [`stt/bisect.py`](stt/bisect.py) (`make_stack_trace_filter`).
 
 ---
 
 ## Flaky-test handling
 
-If we trust a single failure, a 5%-flaky test will make `stt` blame whichever commit happened to fail on the first roll. To avoid this, `--flaky-runs N` re-runs apparent failures up to N times. We only burn extra runs on **failures**, since flakiness is virtually always intermittent failures rather than intermittent passes.
+If `stt` trusts a single failure, a 5%-flaky test will make it blame whichever commit happened to fail on the first roll. To avoid this, `--flaky-runs N` re-runs apparent failures up to N times. We only burn extra runs on **failures**, since flakiness is virtually always intermittent failures rather than intermittent passes.
 
-The implementation short-circuits as soon as the verdict is unambiguous: with `--flaky-runs 5 --flaky-threshold 0.6`, two passes already make confirmation impossible, so we stop after run 2. See [`stt/flaky.py`](stt/flaky.py).
-
----
-
-## Running the demo
-
-A reproducible demo lives under [`examples/demo_repo/`](examples/demo_repo/). One script seeds a tiny repo with a planted regression; then you run `stt` against it.
-
-```bash
-# bash
-bash examples/demo_repo/seed.sh /tmp/stt-demo
-stt bisect --repo /tmp/stt-demo --good HEAD~5 --test tests/test_compute.py::test_answer
-```
-
-```powershell
-# PowerShell
-.\examples\demo_repo\seed.ps1 -Path C:\Temp\stt-demo
-stt bisect --repo C:\Temp\stt-demo --good HEAD~5 --test tests/test_compute.py::test_answer
-```
-
-Expected output: `stt` finds the planted bad commit in 2–3 iterations.
+The implementation **short-circuits** as soon as the verdict is unambiguous: with `--flaky-runs 5 --flaky-threshold 0.6`, two passes already make confirmation impossible, so we stop after run 2. Code in [`stt/flaky.py`](stt/flaky.py).
 
 ---
 
@@ -166,21 +250,21 @@ Expected output: `stt` finds the planted bad commit in 2–3 iterations.
 
 These are deliberate, not bugs.
 
-- **Linear history only.** Bisecting through merge commits gets philosophically interesting (which side of the merge is "bad"?) and `stt` doesn't try. Use `git log --first-parent` to flatten if needed.
+- **Linear history only.** Bisecting through merge commits gets philosophically interesting (which side of the merge is "bad"?) and `stt` doesn't try.
 - **One failing test at a time.** If your suite has multiple regressions in one push, run `stt` per test.
-- **Pytest only (today).** The runner ABC is in place; Jest, Go, and Rust runners are easy adds — see [`stt/runners/base.py`](stt/runners/base.py).
+- **Pytest only (today).** The runner abstraction is in place; Jest, Go, and Rust runners are easy adds — see [`stt/runners/base.py`](stt/runners/base.py).
 - **Stack-trace filter is a heuristic.** See above. Skip it when in doubt.
-- **No parallel bisect.** `git worktree` would let us test commits in parallel — would roughly halve wall time. On the roadmap.
+- **No parallel bisect.** Using `git worktree` would let us test commits in parallel — would roughly halve wall time. On the roadmap.
 
 ---
 
 ## What I'd build next
 
-- **`git worktree`-based parallel bisect.** Run two candidates concurrently — biggest remaining lever on wall time.
-- **Jest and Go runners.** Trivial extensions of the runner ABC.
-- **CI integration.** A GitHub Action that triggers on red main, runs `stt`, and comments on the offending PR with a link to the revert.
-- **Verify-before-revert.** Before opening the revert PR, run the full suite on the proposed revert branch — don't blindly revert.
-- **Web dashboard.** Show in-progress bisects and history of caught regressions across a fleet of repos.
+- **`git worktree`-based parallel bisect.** Run two candidate commits concurrently — biggest remaining lever on wall time.
+- **Jest and Go runners.** Trivial extensions of the runner abstraction.
+- **CI integration.** A GitHub Action that triggers on red `main`, runs `stt`, and comments on the offending PR with a link to the revert.
+- **Verify-before-revert.** Before opening a revert PR, run the full test suite on the proposed revert branch — don't blindly revert.
+- **Web dashboard.** Show in-progress bisects and a history of caught regressions across a fleet of repos.
 
 ---
 
@@ -191,10 +275,29 @@ pip install -e ".[dev]"
 pytest -q
 ```
 
-17 tests; bisect tests build a real throwaway git repo so the binary search exercises real `git rev-list` / `git checkout`, not a mock.
+17 tests. The bisect tests build a real throwaway Git repo so the binary search exercises real `git rev-list` and `git checkout` calls — not mocks.
+
+CI runs the same tests on every push against Python 3.10, 3.11, and 3.12.
 
 ---
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+---
+
+## Glossary
+
+For readers new to Git / GitHub:
+
+- **Commit** — a saved snapshot of your code, with a message describing what changed. Every commit has a unique ID called a "SHA" (e.g. `abc123de`).
+- **Branch** — a named line of development. `main` is the default branch; you'd create a "feature branch" to work on something new without disturbing `main`.
+- **HEAD** — Git's name for "the commit you have checked out right now." `HEAD~50` means "50 commits before HEAD."
+- **Repo / repository** — a project tracked by Git. The thing you `git clone`.
+- **Regression** — a bug introduced by a change to code that previously worked. A test that was passing and is now failing is a regression.
+- **`git bisect`** — Git's built-in tool for binary-searching commit history to find which commit introduced a bug. `stt` automates the manual parts.
+- **CI (Continuous Integration)** — a system that automatically runs your tests every time someone pushes code. The green ✅ badge at the top of this README is from CI.
+- **PR / Pull Request** — on GitHub, a proposed change to a repo. Someone opens a PR with their changes, others review and approve, then it gets merged into `main`.
+- **Stack trace** — the multi-line error output you get when code crashes, showing which functions were running and where the error happened.
+- **Flaky test** — a test that sometimes passes and sometimes fails for the same code, usually due to timing, randomness, or external dependencies. Annoying.
